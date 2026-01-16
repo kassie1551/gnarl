@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <esp_timer.h>
+#include <esp_task_wdt.h>
 #include <driver/gpio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -191,7 +192,7 @@ static void draw_data()
 		should_update = 1;
 	}
 
-	if(should_update)
+	if (should_update)
 		oled_update();
 }
 
@@ -199,6 +200,10 @@ static void display_loop(void *unused)
 {
 	draw_initial();
 
+	ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+
+	const TickType_t REFRESH_TIMEOUT = pdMS_TO_TICKS(100);
+	const TickType_t DISPLAY_DISABLED_TIMEOUT = pdMS_TO_TICKS(10000);
 	TickType_t timeout = 0;
 
 	// Notify the task itself to draw data immediately.
@@ -208,16 +213,26 @@ static void display_loop(void *unused)
 	{
 		uint32_t notification_value;
 		BaseType_t notified = xTaskNotifyWait(0, 0, &notification_value, timeout);
-		if (notified == pdTRUE && notification_value == pdFALSE)
+
+		esp_task_wdt_reset();
+
+		if (notified == pdTRUE)
 		{
-			timeout = portMAX_DELAY;
-			oled_off();
+			if (notification_value == pdFALSE)
+			{
+				timeout = DISPLAY_DISABLED_TIMEOUT;
+				oled_off();
+			}
+			else
+			{
+				timeout = REFRESH_TIMEOUT;
+				draw_data();
+				oled_on();
+			}
 		}
-		else
+		else if (timeout == REFRESH_TIMEOUT)
 		{
-			timeout = pdMS_TO_TICKS(100);
 			draw_data();
-			oled_on();
 		}
 	}
 }

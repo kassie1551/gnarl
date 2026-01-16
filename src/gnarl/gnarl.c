@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <esp_timer.h>
+#include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -417,10 +418,18 @@ void rfspy_command(const uint8_t *buf, int count, int rssi)
 static void gnarl_loop(void *unused)
 {
 	ESP_LOGD(TAG, "starting gnarl_loop");
+	
+	ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+	
 	for (;;)
 	{
 		rfspy_request_t req;
-		xQueueReceive(request_queue, &req, portMAX_DELAY);
+		
+		if (xQueueReceive(request_queue, &req, pdMS_TO_TICKS(5000)) == pdFALSE)
+		{
+			esp_task_wdt_reset();
+			continue;
+		}
 
 		switch (req.command)
 		{
@@ -473,6 +482,8 @@ static void gnarl_loop(void *unused)
 			break;
 		}
 		set_ble_rssi(req.rssi);
+		
+		esp_task_wdt_reset();
 	}
 }
 

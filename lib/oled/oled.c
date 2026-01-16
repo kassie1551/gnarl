@@ -155,6 +155,7 @@ void oled_init(void) {
 	u8g2_Setup_ssd1306_i2c_128x64_noname_f(&u8g2, U8G2_R0, i2c_callback, gpio_and_delay_callback);
 	u8x8_SetI2CAddress(&u8g2.u8x8, 0x3C << 1);
 	u8g2_InitDisplay(&u8g2);
+	u8g2_SetFlipMode(&u8g2, 1);
 
 	oled_on();
 	oled_clear();

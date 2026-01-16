@@ -212,11 +212,20 @@ void transmit(uint8_t *buf, int count) {
 		// Wait until there is room for at least fifoSize - fifoThreshold bytes in the FIFO.
 		// Err on the short side here to avoid TXFIFO underflow.
 		usleep(FIFO_SIZE / 4 * MILLISECOND);
+		int fifo_wait = 0;
 		for (;;) {
 			if (!fifo_threshold_exceeded()) {
 				avail = FIFO_SIZE - FIFO_THRESHOLD;
 				break;
 			}
+			fifo_wait++;
+			if (fifo_wait >= MAX_WAIT) {
+				ESP_LOGE(TAG, "transmit: FIFO threshold wait timeout");
+				sequencer_stop();
+				set_mode_sleep();
+				return;
+			}
+			usleep(100);
 		}
 	}
 	if (!wait_for_fifo_room()) {
