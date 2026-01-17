@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 
-#include "pump_config.h"
 #include "version.h"
 
 #define TAG "GNARL"

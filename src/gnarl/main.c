@@ -9,6 +9,10 @@
 #include "rfm95.h"
 #include "spi.h"
 
+#ifndef PUMP_FREQUENCY
+#define PUMP_FREQUENCY (868500000)
+#endif
+
 /**
  * To enable power saving:
  * menuconfig -> Component config -> Power management -> Enable

@@ -225,7 +225,7 @@ void transmit(uint8_t *buf, int count) {
 				set_mode_sleep();
 				return;
 			}
-			usleep(15);
+			usleep(1);
 		}
 	}
 	if (!wait_for_fifo_room()) {
@@ -266,6 +266,8 @@ static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
 		wait_fn(timeout);
 		if (!packet_seen()) {
 			set_mode_sleep();
+			clear_fifo();
+			gpio_intr_disable(LORA_DIO2);
 			ESP_LOGD(TAG, "receive timeout");
 			return 0;
 		}

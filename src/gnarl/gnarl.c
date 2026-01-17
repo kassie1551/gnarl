@@ -241,6 +241,22 @@ static void send_and_listen(const uint8_t *buf, int len)
 	int n = 0;
 	int rssi = 0;
 
+	/*
+		AAPS sends wakeup request as 200 repetitions with 0 delay
+		It leads to problems with Paradigm722 wakup.
+		Patched to 100 repetitions as in pump_clock app, leading also
+		to power consumption reduction.
+		It may be also fixed in AAPS core code, but it is easier to do it here.
+	*/
+
+	if (p->repeat_count >= 100 && p->delay_ms == 0 && p->timeout_ms >= 24000)
+	{
+		p->repeat_count = 100;
+		p->delay_ms = 0;
+		p->timeout_ms = 8000;
+		p->retry_count = 3;
+	}
+
 	for (int retries = p->retry_count + 1; retries > 0; retries--)
 	{
 		send(p->packet, len, p->repeat_count, p->delay_ms);
@@ -418,13 +434,13 @@ void rfspy_command(const uint8_t *buf, int count, int rssi)
 static void gnarl_loop(void *unused)
 {
 	ESP_LOGD(TAG, "starting gnarl_loop");
-	
+
 	ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
-	
+
 	for (;;)
 	{
 		rfspy_request_t req;
-		
+
 		if (xQueueReceive(request_queue, &req, pdMS_TO_TICKS(5000)) == pdFALSE)
 		{
 			esp_task_wdt_reset();
@@ -482,7 +498,7 @@ static void gnarl_loop(void *unused)
 			break;
 		}
 		set_ble_rssi(req.rssi);
-		
+
 		esp_task_wdt_reset();
 	}
 }
