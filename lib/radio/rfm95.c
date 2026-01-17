@@ -225,7 +225,7 @@ void transmit(uint8_t *buf, int count) {
 				set_mode_sleep();
 				return;
 			}
-			usleep(100);
+			usleep(15);
 		}
 	}
 	if (!wait_for_fifo_room()) {
