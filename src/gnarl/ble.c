@@ -23,7 +23,7 @@
 
 static uint8_t custom_name[CUSTOM_NAME_SIZE];
 
-void ble_store_ram_init(void);
+void ble_store_config_init(void);
 
 #define B0(x) ((x) & 0xFF)
 #define B1(x) (((x) >> 8) & 0xFF)
@@ -514,6 +514,6 @@ void gnarl_init(void)
 		assert(!err);
 	}
 
-	ble_store_ram_init();
+	ble_store_config_init();
 	nimble_port_freertos_init(host_task);
 }
