@@ -247,14 +247,15 @@ static void send_and_listen(const uint8_t *buf, int len)
 		Patched to 100 repetitions as in pump_clock app, leading also
 		to power consumption reduction.
 		It may be also fixed in AAPS core code, but it is easier to do it here.
+		3 x (100 packets + 6 s) must fit AAPS's 25 s + 7.5 s response timeout.
 	*/
 
 	if (p->repeat_count >= 100 && p->delay_ms == 0 && p->timeout_ms >= 24000)
 	{
 		p->repeat_count = 100;
 		p->delay_ms = 0;
-		p->timeout_ms = 8000;
-		p->retry_count = 3;
+		p->timeout_ms = 6000;
+		p->retry_count = 2;
 	}
 
 	for (int retries = p->retry_count + 1; retries > 0; retries--)
