@@ -65,7 +65,6 @@ static bool connected;
 static uint16_t connection_handle;
 
 static uint16_t response_count_notify_handle;
-static int response_count_notify_state;
 static uint8_t response_count;
 
 static uint16_t timer_tick_notify_handle;
@@ -235,12 +234,6 @@ static int handle_gap_event(struct ble_gap_event *e, void *arg)
 		advertise();
 		break;
 	case BLE_GAP_EVENT_SUBSCRIBE:
-		if (e->subscribe.attr_handle == response_count_notify_handle)
-		{
-			ESP_LOGD(TAG, "notify %d for response count", e->subscribe.cur_notify);
-			response_count_notify_state = e->subscribe.cur_notify;
-			break;
-		}
 		if (e->subscribe.attr_handle == timer_tick_notify_handle)
 		{
 			ESP_LOGD(TAG, "notify %d for timer tick", e->subscribe.cur_notify);
@@ -284,14 +277,13 @@ static uint16_t data_out_len;
 static void response_notify(void)
 {
 	response_count++;
-	if (!response_count_notify_state)
-	{
-		ESP_LOGD(TAG, "not notifying for response count %d", response_count);
-		return;
-	}
+	// Notify even if unsubscribed: after our reset AAPS subscribes again only once its current task ends.
 	struct os_mbuf *om = ble_hs_mbuf_from_flat(&response_count, sizeof(response_count));
 	int err = ble_gattc_notify_custom(connection_handle, response_count_notify_handle, om);
-	assert(!err);
+	if (err)
+	{
+		ESP_LOGI(TAG, "response notify failed (%d)", err);
+	}
 	ESP_LOGD(TAG, "notify for response count %d", response_count);
 }
 
