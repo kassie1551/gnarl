@@ -4,6 +4,7 @@
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "hal/wdt_hal.h"
 
 #include "module.h"
 
@@ -99,6 +100,10 @@ static void adc_task(void *arg)
         if (low_readings >= LOW_BATTERY_READINGS)
         {
             esp_sleep_enable_ext0_wakeup(BUTTON, 0);
+            // RTC watchdog would otherwise wake the chip every minute.
+            wdt_hal_context_t rtc_wdt = RWDT_HAL_CONTEXT_DEFAULT();
+            wdt_hal_write_protect_disable(&rtc_wdt);
+            wdt_hal_disable(&rtc_wdt);
             esp_deep_sleep_start();
         }
 

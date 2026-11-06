@@ -6,6 +6,9 @@
 
 #include <esp_timer.h>
 #include <esp_task_wdt.h>
+#include <hal/rwdt_ll.h>
+#include <hal/wdt_hal.h>
+#include <soc/rtc.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -432,11 +435,32 @@ void rfspy_command(const uint8_t *buf, int count, int rssi)
 	ESP_LOGD(TAG, "rfspy_command 0x%x, queue length %d", cmd, uxQueueMessagesWaiting(request_queue));
 }
 
+static wdt_hal_context_t rtc_wdt = RWDT_HAL_CONTEXT_DEFAULT();
+
+// The task watchdog stops in light sleep; the RTC one keeps counting and resets a frozen chip.
+static void rtc_wdt_start(void)
+{
+	wdt_hal_init(&rtc_wdt, WDT_RWDT, 0, false);
+	wdt_hal_write_protect_disable(&rtc_wdt);
+	rwdt_ll_set_pause_in_sleep_en(rtc_wdt.rwdt_dev, false);
+	wdt_hal_config_stage(&rtc_wdt, WDT_STAGE0, 60 * rtc_clk_slow_freq_get_hz(), WDT_STAGE_ACTION_RESET_RTC);
+	wdt_hal_enable(&rtc_wdt);
+	wdt_hal_write_protect_enable(&rtc_wdt);
+}
+
+static void rtc_wdt_feed(void)
+{
+	wdt_hal_write_protect_disable(&rtc_wdt);
+	wdt_hal_feed(&rtc_wdt);
+	wdt_hal_write_protect_enable(&rtc_wdt);
+}
+
 static void gnarl_loop(void *unused)
 {
 	ESP_LOGD(TAG, "starting gnarl_loop");
 
 	ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+	rtc_wdt_start();
 
 	for (;;)
 	{
@@ -445,6 +469,7 @@ static void gnarl_loop(void *unused)
 		if (xQueueReceive(request_queue, &req, pdMS_TO_TICKS(5000)) == pdFALSE)
 		{
 			esp_task_wdt_reset();
+			rtc_wdt_feed();
 			continue;
 		}
 
@@ -501,6 +526,7 @@ static void gnarl_loop(void *unused)
 		set_ble_rssi(req.rssi);
 
 		esp_task_wdt_reset();
+		rtc_wdt_feed();
 	}
 }
 
