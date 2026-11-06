@@ -2,6 +2,8 @@
 
 #include <esp_log.h>
 #include <esp_pm.h>
+#include <esp_sleep.h>
+#include <soc/rtc_io_reg.h>
 
 #include "adc.h"
 #include "display.h"
@@ -24,6 +26,11 @@
 
 void app_main(void)
 {
+	// Crystal current (method 2) comes from the touch pad in RTC_PERIPH; IDF keeps it on in sleep only for method 1.
+	ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON));
+	// Keep the 32 kHz crystal at its start-up drive; on this ESP32 revision it can stop in light sleep.
+	REG_SET_FIELD(RTC_IO_XTAL_32K_PAD_REG, RTC_IO_DAC_XTAL_32K, 3);
+
 	esp_pm_config_t pm_config = {
 		.max_freq_mhz = 80,
 		.min_freq_mhz = 20,
