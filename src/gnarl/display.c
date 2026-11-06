@@ -245,8 +245,12 @@ static inline void disable_display(TimerHandle_t xTimer)
 static void button_interrupt(void *unused)
 {
 	BaseType_t higher_priority_task_woken = pdFALSE;
+	int pressed = !gpio_get_level(BUTTON);
 
-	if (!gpio_get_level(BUTTON))
+	// LED proves the CPU is alive even when the display stays dark.
+	gpio_set_level(LED, pressed);
+
+	if (pressed)
 	{
 		xTaskNotifyFromISR(task_handle, pdTRUE, eSetValueWithOverwrite, &higher_priority_task_woken);
 		xTimerStopFromISR(shutdown_timer, &higher_priority_task_woken);
@@ -261,6 +265,8 @@ void display_init(void)
 {
 	xTaskCreate(display_loop, "display", 4096, 0, 10, &task_handle);
 	shutdown_timer = xTimerCreate("display_off", pdMS_TO_TICKS(DISPLAY_TIMEOUT * 1000), pdFALSE, 0, disable_display);
+
+	gpio_set_direction(LED, GPIO_MODE_OUTPUT);
 
 	// Enable interrupt on button press.
 	gpio_set_direction(BUTTON, GPIO_MODE_INPUT);
