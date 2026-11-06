@@ -39,7 +39,7 @@ typedef struct
 	uint8_t data[MAX_PARAM_LEN + MAX_PACKET_LEN];
 } rfspy_request_t;
 
-#define QUEUE_LENGTH (20)
+#define QUEUE_LENGTH (1) // xQueueOverwrite needs exactly one slot
 
 static QueueHandle_t request_queue;
 
@@ -164,12 +164,14 @@ static uint8_t raw_rssi(int rssi)
 	return (rssi + rssi_offset) * 2;
 }
 
+static volatile bool interrupted;
+
 static void rx_common(int n, int rssi)
 {
 	if (n == 0)
 	{
 		ESP_LOGD(TAG, "RX: timeout");
-		send_code(RESPONSE_CODE_RX_TIMEOUT);
+		send_code(interrupted ? RESPONSE_CODE_CMD_INTERRUPTED : RESPONSE_CODE_RX_TIMEOUT);
 		set_pump_disconnected();
 		return;
 	}
@@ -261,7 +263,7 @@ static void send_and_listen(const uint8_t *buf, int len)
 		p->retry_count = 2;
 	}
 
-	for (int retries = p->retry_count + 1; retries > 0; retries--)
+	for (int retries = p->retry_count + 1; retries > 0 && !interrupted; retries--)
 	{
 		send(p->packet, len, p->repeat_count, p->delay_ms);
 		n = receive(rx_buf.packet, sizeof(rx_buf.packet), p->timeout_ms);
@@ -410,28 +412,22 @@ void rfspy_command(const uint8_t *buf, int count, int rssi)
 		return;
 	}
 
-	// Do this before enqueueing, otherwise there is a risk of self-inflicting
-	// the notification due to concurrency.
-	if (uxQueueMessagesWaiting(request_queue) > 0)
-	{
-		if (in_get_packet)
-		{
-			ESP_LOGD(TAG, "rfspy_command: xTaskNotifyGive");
-			xTaskNotifyGive(gnarl_loop_handle);
-		}
-	}
+	// Like RileyLink, a new command ends the current one's listening. Before enqueueing, so it can't hit itself.
+	interrupted = true;
+	xTaskNotifyGive(gnarl_loop_handle);
 	rfspy_request_t req = {
 		.command = cmd,
 		.length = count - 2,
 		.rssi = rssi,
 	};
 	memcpy(req.data, buf + 2, req.length);
-	if (!xQueueSend(request_queue, &req, 0))
+	// AAPS sends a command only after the previous one was answered or timed out, so a waiting one is stale.
+	if (uxQueueMessagesWaiting(request_queue) > 0)
 	{
-		ESP_LOGE(TAG, "rfspy_command: cannot queue request for command %d", cmd);
+		ESP_LOGI(TAG, "rfspy_command: dropping stale command before %d", cmd);
 		statistics.rx_fifo_overflow += 1;
-		return;
 	}
+	xQueueOverwrite(request_queue, &req);
 	ESP_LOGD(TAG, "rfspy_command 0x%x, queue length %d", cmd, uxQueueMessagesWaiting(request_queue));
 }
 
@@ -472,6 +468,8 @@ static void gnarl_loop(void *unused)
 			rtc_wdt_feed();
 			continue;
 		}
+		interrupted = false;
+		xTaskNotifyStateClear(NULL);
 
 		switch (req.command)
 		{
