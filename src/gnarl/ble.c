@@ -192,6 +192,9 @@ static void advertise(void)
 	memset(&adv, 0, sizeof(adv));
 	adv.conn_mode = BLE_GAP_CONN_MODE_UND;
 	adv.disc_mode = BLE_GAP_DISC_MODE_GEN;
+	// NimBLE defaults to 30-60 ms, which drains the battery while the phone is away.
+	adv.itvl_min = BLE_GAP_ADV_ITVL_MS(200);
+	adv.itvl_max = BLE_GAP_ADV_ITVL_MS(300);
 
 	err = ble_gap_adv_start(addr_type, 0, BLE_HS_FOREVER, &adv, handle_gap_event, 0);
 	assert(!err);
