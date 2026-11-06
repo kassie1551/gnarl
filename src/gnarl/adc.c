@@ -14,6 +14,7 @@ const static char *TAG = "ADC";
 #define AVG_SAMPLES (10)
 #define AVG_PERIOD (4) // seconds
 #define SCALE_VOLTAGE(raw_mv) (raw_mv * (100 + 220) / 100)
+#define LOW_BATTERY_READINGS (3) // consecutive, so a dip while transmitting doesn't sleep
 
 static int battery_voltage;
 
@@ -70,6 +71,7 @@ static void adc_task(void *arg)
     ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&cali_config, &cali_handle));
 
     TickType_t last_wake_time = xTaskGetTickCount();
+    int low_readings = 0;
 
     for (;;)
     {
@@ -93,8 +95,10 @@ static void adc_task(void *arg)
         ESP_LOGI(TAG, "ADC voltage: %d mV (%d mV scaled)", averaged_result, SCALE_VOLTAGE(averaged_result));
         battery_voltage = SCALE_VOLTAGE(averaged_result);
 
-        if (battery_voltage < 3000)
+        low_readings = battery_voltage < 3000 ? low_readings + 1 : 0;
+        if (low_readings >= LOW_BATTERY_READINGS)
         {
+            esp_sleep_enable_ext0_wakeup(BUTTON, 0);
             esp_deep_sleep_start();
         }
 
