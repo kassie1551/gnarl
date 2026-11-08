@@ -254,15 +254,16 @@ static void send_and_listen(const uint8_t *buf, int len)
 		Patched to 100 repetitions as in pump_clock app, leading also
 		to power consumption reduction.
 		It may be also fixed in AAPS core code, but it is easier to do it here.
-		3 x (100 packets + 6 s) must fit AAPS's 25 s + 7.5 s response timeout.
+		The pump replies ~0.1 s after a burst it heard, so listen only 1 s and send more bursts:
+		8 x (100 packets + 1 s) must fit AAPS's 25 s + 7.5 s response timeout.
 	*/
 
 	if (p->repeat_count >= 100 && p->delay_ms == 0 && p->timeout_ms >= 24000)
 	{
 		p->repeat_count = 100;
 		p->delay_ms = 0;
-		p->timeout_ms = 6000;
-		p->retry_count = 2;
+		p->timeout_ms = 1000;
+		p->retry_count = 7;
 	}
 
 	for (int retries = p->retry_count + 1; retries > 0 && !interrupted; retries--)
@@ -272,6 +273,7 @@ static void send_and_listen(const uint8_t *buf, int len)
 		rssi = read_rssi();
 		if (n != 0)
 		{
+			ESP_LOGI(TAG, "reply after %d of %d sends", p->retry_count + 2 - retries, p->retry_count + 1);
 			break;
 		}
 	}
