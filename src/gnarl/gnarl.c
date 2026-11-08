@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <esp_timer.h>
+#include <esp_pm.h>
 #include <esp_task_wdt.h>
 #include <hal/rwdt_ll.h>
 #include <hal/wdt_hal.h>
@@ -40,6 +41,7 @@ typedef struct
 } rfspy_request_t;
 
 #define QUEUE_LENGTH (1) // xQueueOverwrite needs exactly one slot
+#define TALK_WINDOW_MS (1000) // AAPS answers in <0.5 s
 
 static QueueHandle_t request_queue;
 
@@ -458,11 +460,22 @@ static void gnarl_loop(void *unused)
 	ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
 	rtc_wdt_start();
 
+	// Light sleep delays AAPS's next command by seconds and froze tune-ups, so stay awake for 1 s after a response.
+	esp_pm_lock_handle_t talk_lock;
+	ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "aaps", &talk_lock));
+	bool talking = false;
+
 	for (;;)
 	{
 		rfspy_request_t req;
+		BaseType_t received = xQueueReceive(request_queue, &req, pdMS_TO_TICKS(talking ? TALK_WINDOW_MS : 5000));
 
-		if (xQueueReceive(request_queue, &req, pdMS_TO_TICKS(5000)) == pdFALSE)
+		if (talking)
+		{
+			ESP_ERROR_CHECK(esp_pm_lock_release(talk_lock));
+			talking = false;
+		}
+		if (received == pdFALSE)
 		{
 			esp_task_wdt_reset();
 			rtc_wdt_feed();
@@ -522,6 +535,8 @@ static void gnarl_loop(void *unused)
 			break;
 		}
 		set_ble_rssi(req.rssi);
+		ESP_ERROR_CHECK(esp_pm_lock_acquire(talk_lock));
+		talking = true;
 
 		esp_task_wdt_reset();
 		rtc_wdt_feed();
