@@ -62,6 +62,7 @@ static ble_gatt_access_fn no_access;
 static ble_gatt_access_fn battery_level_access;
 
 static bool connected;
+static bool latency_requested;
 static uint16_t connection_handle;
 
 static uint16_t response_count_notify_handle;
@@ -201,6 +202,26 @@ static void advertise(void)
 	ESP_LOGD(TAG, "advertising started");
 }
 
+// The phone's connection interval sets how often BLE wakes the chip.
+static void log_conn_params(uint16_t conn_handle, int status)
+{
+	struct ble_gap_conn_desc desc;
+	ble_gap_conn_find(conn_handle, &desc);
+	ESP_LOGI(TAG, "connection interval %d us, latency %d, timeout %d ms, status %d", desc.conn_itvl * 1250, desc.conn_latency, desc.supervision_timeout * 10, status);
+}
+
+// The phone's 37.5 ms interval wakes us 27 times a second; latency lets idle events be skipped.
+static void request_latency(uint16_t conn_handle)
+{
+	struct ble_gap_upd_params params = {
+		.itvl_min = BLE_GAP_CONN_ITVL_MS(30),
+		.itvl_max = BLE_GAP_CONN_ITVL_MS(50),
+		.latency = 4,
+		.supervision_timeout = BLE_GAP_SUPERVISION_TIMEOUT_MS(5000),
+	};
+	ble_gap_update_params(conn_handle, &params);
+}
+
 static int handle_gap_event(struct ble_gap_event *e, void *arg)
 {
 	switch (e->type)
@@ -213,12 +234,14 @@ static int handle_gap_event(struct ble_gap_event *e, void *arg)
 			return 0;
 		}
 		connected = true;
+		latency_requested = false;
 		int8_t rssi;
 		ble_gap_conn_rssi(e->connect.conn_handle, &rssi);
 		set_ble_rssi(rssi);
 
 		connection_handle = e->connect.conn_handle;
 		ESP_LOGI(TAG, "connected");
+		log_conn_params(connection_handle, 0);
 		ESP_LOGD(TAG, "connection handle 0x%04X", connection_handle);
 		ESP_LOGD(TAG, "response count notify handle 0x%04X", response_count_notify_handle);
 		ESP_LOGD(TAG, "timer tick notify handle 0x%04X", timer_tick_notify_handle);
@@ -228,6 +251,14 @@ static int handle_gap_event(struct ble_gap_event *e, void *arg)
 		set_ble_disconnected();
 		ESP_LOGD(TAG, "disconnected (0x%x)", e->disconnect.reason);
 		advertise();
+		break;
+	case BLE_GAP_EVENT_CONN_UPDATE:
+		log_conn_params(e->conn_update.conn_handle, e->conn_update.status);
+		// Our request collided with the phone's own update; ask again at the next command.
+		if (e->conn_update.status == BLE_HS_HCI_ERR(BLE_ERR_LMP_COLLISION))
+		{
+			latency_requested = false;
+		}
 		break;
 	case BLE_GAP_EVENT_ADV_COMPLETE:
 		ESP_LOGD(TAG, "advertising complete (0x%x)", e->adv_complete.reason);
@@ -340,6 +371,12 @@ static int data_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_ga
 		assert(!err);
 		ESP_LOGD(TAG, "data_access: command received");
 		ble_gap_conn_rssi(conn_handle, &rssi);
+		// The phone resets the parameters when its setup ends, so ask once it sends commands.
+		if (!latency_requested)
+		{
+			latency_requested = true;
+			request_latency(conn_handle);
+		}
 		rfspy_command(data_in, data_in_len, (int)rssi);
 		return 0;
 	default:
