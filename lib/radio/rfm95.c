@@ -265,6 +265,7 @@ static int rx_common(wait_fn_t wait_fn, uint8_t *buf, int count, int timeout) {
 		// Stay in RX mode.
 		wait_fn(timeout);
 		if (!packet_seen()) {
+			ESP_LOGI(TAG, "no packet, rssi %d", -(int)read_register(REG_RSSI) / 2);
 			set_mode_sleep();
 			clear_fifo();
 			gpio_intr_disable(LORA_DIO2);
@@ -323,9 +324,12 @@ int sleep_receive(uint8_t *buf, int count, int timeout) {
 	return rx_common(sleep_until_interrupt, buf, count, timeout);
 }
 
+// Light sleep does not wake on the sync interrupt, so poll within the FIFO fill time (64 bytes = 31 ms).
+#define USE_POLLING
+
 #ifdef USE_POLLING
 
-#define POLL_INTERVAL	5  // milliseconds
+#define POLL_INTERVAL	15  // milliseconds
 
 static void wait_until_interrupt(int timeout) {
 	while (!packet_seen() && timeout > 0) {
