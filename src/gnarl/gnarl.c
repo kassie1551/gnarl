@@ -16,6 +16,7 @@
 
 #include "4b6b.h"
 #include "commands.h"
+#include "crc.h"
 #include "display.h"
 #include "rfm95.h"
 
@@ -195,11 +196,15 @@ static void rx_common(int n, int rssi)
 		break;
 	case ENCODING_4B6B:
 		d = decode_4b6b(rx_buf.packet, pkt_buf, n);
-		if (d != -1)
+		if (d < 2 || crc8(pkt_buf, d - 1) != pkt_buf[d - 1])
 		{
-			memcpy(rx_buf.packet, pkt_buf, d);
-			n = d;
+			// AAPS does not check the CRC; ZERO_DATA makes it retry the command.
+			ESP_LOGI(TAG, "RX: corrupted packet, rssi %d, %d encoded, %d decoded", rssi, n, d);
+			send_code(RESPONSE_CODE_ZERO_DATA);
+			return;
 		}
+		memcpy(rx_buf.packet, pkt_buf, d);
+		n = d;
 		break;
 	default:
 		ESP_LOGE(TAG, "RX: unknown encoding type %d", encoding_type);
